@@ -10,7 +10,7 @@ AFRAME.registerComponent('click-to-start-animation', {
   init: function () {
     const anchor = this.el;
 
-    // ===== DOM =====
+    // ===== DOM ELEMENTS =====
     const overlay = document.getElementById('overlay');
     const question = document.getElementById('question');
     const clearButton = document.getElementById('clear-button');
@@ -22,28 +22,25 @@ AFRAME.registerComponent('click-to-start-animation', {
     const noteWetFloor = document.getElementById('note-wetfloor');
 
     // ===== MODELS =====
-    const workerTripping   = document.getElementById('workerTripping');
-    const workerSafe       = document.getElementById('workerSafe');
-    const workerWalkingSafe= document.getElementById('workerWalkingSafe');
-    const workerSlipping   = document.getElementById('workerSlipping');
-    const workerSlipping2  = document.getElementById('workerSlipping2');
-    const workerSafeSign   = document.getElementById('workerSafeSign');
-    const pallet           = document.getElementById('palletModel');
+    const workerTripping = document.getElementById('workerTripping');
+    const workerSafe = document.getElementById('workerSafe');
+    const workerWalkingSafe = document.getElementById('workerWalkingSafe');
+    const workerSlipping = document.getElementById('workerSlipping');
+    const workerSlipping2 = document.getElementById('workerSlipping2');
+    const workerSafeSign = document.getElementById('workerSafeSign');
+    const pallet = document.getElementById('palletModel');
 
     // ===== STATE =====
     let animationStarted = false;
     let questionShown = false;
     let scene2Started = false;
 
-    // Track timers & one-off listeners so we can cancel them on reset
     const timers = new Set();
     const addTimer = (id) => timers.add(id);
     const clearTimers = () => { for (const t of timers) clearTimeout(t); timers.clear(); };
 
-    // To remove the “startExperience” listener on reset (if target is lost before first tap)
     let startExperienceFn = null;
 
-    // Helpers
     const hideAllModels = () => {
       [workerTripping, workerSafe, workerWalkingSafe, workerSlipping, workerSlipping2, workerSafeSign, pallet]
         .forEach(el => el && el.setAttribute('visible', false));
@@ -59,15 +56,13 @@ AFRAME.registerComponent('click-to-start-animation', {
       });
     };
 
-    // Safety: remove lingering animation-finished listener for slip2
     const removeSlip2Finished = () => {
       workerSlipping2?.removeEventListener('animation-finished', onSlip2Finished);
     };
 
-    // Defined later but referenced here
     let onSlip2Finished = () => {};
 
-    // ===== PHASE 1 =====
+    // ===== PHASE 1: Worker Tripping =====
     workerTripping.addEventListener('model-loaded', () => {
       const mesh = workerTripping.getObject3D('mesh');
       const clips = mesh?.animations;
@@ -82,8 +77,11 @@ AFRAME.registerComponent('click-to-start-animation', {
       const duration = clips[0].duration;
 
       anchor.addEventListener('targetFound', () => {
-        // Always start clean on each reacquire
-        resetAll();
+        if (scene2Started || workerSlipping.getAttribute('visible') || workerSlipping2.getAttribute('visible') || noteWetFloor.style.display === 'flex') {
+          resetToPhase2();
+        } else {
+          resetToPhase1();
+        }
 
         if (animationStarted) return;
         overlay.style.display = 'flex';
@@ -98,7 +96,6 @@ AFRAME.registerComponent('click-to-start-animation', {
           action.setEffectiveTimeScale(speed);
           action.play();
 
-          // show the question after animation (speed-adjusted) + 2s
           const t = setTimeout(() => {
             question.style.display = 'flex';
             questionShown = true;
@@ -114,13 +111,9 @@ AFRAME.registerComponent('click-to-start-animation', {
         document.body.addEventListener('touchend', startExperienceFn);
         animationStarted = true;
       });
-
-      anchor.addEventListener('targetLost', () => {
-        resetAll();
-      });
     });
 
-    // ===== PHASE 1 -> Tap to continue =====
+    // ===== Transition to Question (PHASE 1) =====
     const onBodyTapPhase1 = () => {
       if (questionShown) {
         question.style.display = 'none';
@@ -144,10 +137,7 @@ AFRAME.registerComponent('click-to-start-animation', {
       const mesh = workerWalkingSafe.getObject3D('mesh');
       const clips = mesh?.animations;
       const mixer = workerWalkingSafe.components['animation-mixer']?.mixer;
-      if (!clips || !mixer) {
-        console.warn('WorkerWalkingSafe missing animation');
-        return;
-      }
+      if (!clips || !mixer) return;
 
       const action = mixer.clipAction(clips[0]);
       action.reset();
@@ -163,7 +153,7 @@ AFRAME.registerComponent('click-to-start-animation', {
       addTimer(t);
     });
 
-    // ===== PHASE 2 START =====
+    // ===== PHASE 2: Worker Slipping =====
     const onBodyTapPhase2 = () => {
       if (scene2Started) {
         overlay2.style.display = 'none';
@@ -173,10 +163,7 @@ AFRAME.registerComponent('click-to-start-animation', {
         const mesh = workerSlipping.getObject3D('mesh');
         const clips = mesh?.animations;
         const mixer = workerSlipping.components['animation-mixer']?.mixer;
-        if (!clips || !mixer) {
-          console.warn('WorkerSlipping missing animation');
-          return;
-        }
+        if (!clips || !mixer) return;
 
         const action = mixer.clipAction(clips[0]);
         action.reset();
@@ -205,10 +192,7 @@ AFRAME.registerComponent('click-to-start-animation', {
       const mesh = workerSlipping2.getObject3D('mesh');
       const clips = mesh?.animations;
       const mixer = workerSlipping2.components['animation-mixer']?.mixer;
-      if (!clips || !mixer) {
-        console.warn('WorkerSlipping2 missing animation');
-        return;
-      }
+      if (!clips || !mixer) return;
 
       const action = mixer.clipAction(clips[0]);
       action.reset();
@@ -217,7 +201,6 @@ AFRAME.registerComponent('click-to-start-animation', {
       action.setEffectiveTimeScale(0.5);
       action.play();
 
-      // Show "wet floor" note AFTER animation ends, then show Add Sign
       onSlip2Finished = () => {
         addSignButton.style.display = 'none';
         noteWetFloor.style.display = 'flex';
@@ -237,20 +220,16 @@ AFRAME.registerComponent('click-to-start-animation', {
       workerSlipping2.addEventListener('animation-finished', onSlip2Finished);
     });
 
-    // ===== Final: Add Sign =====
+    // ===== Final Step: Add Sign =====
     addSignButton.addEventListener('click', () => {
       addSignButton.style.display = 'none';
       hideAllModels();
-
       workerSafeSign.setAttribute('visible', true);
 
       const mesh = workerSafeSign.getObject3D('mesh');
       const clips = mesh?.animations;
       const mixer = workerSafeSign.components['animation-mixer']?.mixer;
-      if (!clips || !mixer) {
-        console.warn('WorkerSafeSign missing animation');
-        return;
-      }
+      if (!clips || !mixer) return;
 
       const action = mixer.clipAction(clips[0]);
       action.reset();
@@ -259,32 +238,37 @@ AFRAME.registerComponent('click-to-start-animation', {
       action.play();
     });
 
-    // ===== RESET EVERYTHING on targetLost (or before a new run) =====
-    const resetAll = () => {
-      // 1) Kill timers to prevent late UI/model changes
+    // ===== Reset Phase 1 (full experience) =====
+    const resetToPhase1 = () => {
       clearTimers();
+      stopAllMixers();
 
-      // 2) Remove pending startExperience listener if it exists
       if (startExperienceFn) {
         document.body.removeEventListener('click', startExperienceFn);
         document.body.removeEventListener('touchend', startExperienceFn);
         startExperienceFn = null;
       }
 
-      // 3) Remove one-off animation listeners
       removeSlip2Finished();
-
-      // 4) Stop any running animations
-      stopAllMixers();
-
-      // 5) Hide EVERYTHING
       hideAllUI();
       hideAllModels();
 
-      // 6) Reset state flags so next targetFound is a fresh run
       animationStarted = false;
       questionShown = false;
       scene2Started = false;
+    };
+
+    // ===== Reset Phase 2 only =====
+    const resetToPhase2 = () => {
+      clearTimers();
+      stopAllMixers();
+      removeSlip2Finished();
+
+      hideAllUI();
+      hideAllModels();
+
+      scene2Started = true;
+      overlay2.style.display = 'flex';
     };
   }
 });
